@@ -7,7 +7,7 @@
 
 3 класса:UserMassage(Модель сообщения чата), UserBlock(Управление блокировками пользователя), WordBlock(Управление списком плохих слов)
 
-3 агента: Обновление списка заблокирвоанных юзеров, Обновление списка плохих слов, Фильтрация сообщений
+3 агента: Обновление списка заблокированных юзеров, Обновление списка плохих слов, Фильтрация сообщений
 
 Инструкция по запуску и тестированию
 
@@ -33,10 +33,10 @@ faust -A agent_filter send bad-words-topic '{"word": "ass", "action": "add"}' -k
 
 faust -A agent_filter send bad-words-topic '{"word": "spam", "action": "add"}' -k global #добавляем плохое слово
 
-faust -A agent_filter send messages '{"user_id": "user2", "user_received_id": "receiver4", "massage": "hello spam"}' #отчистка перед filtered_messages
+faust -A agent_filter send messages '{"user_id": "user2", "message": "hello spam"}' -k receiver4 #фильтрация перед filtered_messages
 
-faust -A agent_filter send messages '{"user_id": "user2", "user_received_id": "receiver4", "massage": "hello ass"}' #отчистка перед filtered_messages
+faust -A agent_filter send messages '{"user_id": "user2", "message": "hello ass"}' -k receiver4 #фильтрация перед filtered_messages
 
-faust -A agent_filter send messages '{"user_id": "user2", "user_received_id": "receiver4", "massage": "hello"}' #проходит целиком
+faust -A agent_filter send messages '{"user_id": "user2", "message": "hello"}' -k receiver4 #проходит целиком
 
 exit
