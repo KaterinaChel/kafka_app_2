@@ -1,19 +1,21 @@
 import faust
+import re
 import json
 
 app = faust.App(
     "filtered-app",
     broker="kafka-0:9092,kafka-1:9092,kafka-2:9092",
     value_serializer="json",
+    producer_acks="all",
+    producer_max_retries=5
 )
 
-class UserMassage(faust.Record):
+class UserMessage(faust.Record):
 
     """Модель сообщения чата"""
 
     user_id: str
-    user_received_id: str
-    massage: str
+    message: str
 
 class UserBlock(faust.Record):
 
@@ -34,12 +36,12 @@ user_blocked = app.Table('user_blocked', default=set,partitions=3)
 bad_words = app.Table('bad_words', default=set,partitions=1)
 
 # Топики kraft
-input_topic = app.topic("messages", value_type=UserMassage,partitions=4)
-blocks_topic = app.topic('blocks-topic', key_type=str, value_type=UserBlock,partitions=3)
+input_topic = app.topic("messages", key_type=str, value_type=UserMessage,partitions=4)
+blocked_users = app.topic('blocks-topic', key_type=str, value_type=UserBlock,partitions=3)
 bad_words_topic = app.topic('bad-words-topic', key_type=str, value_type=WordBlock,partitions=1)
-output_topic = app.topic("filtered_messages", value_type=UserMassage,partitions=4)
+output_topic = app.topic("filtered_messages", key_type=str, value_type=UserMessage,partitions=4)
 
-@app.agent(blocks_topic)
+@app.agent(blocked_users)
 async def update_blocks(stream) -> None:
 
     """Обновляет таблицу блокировок пользователей из blocks-topic.
@@ -93,29 +95,37 @@ async def process_messages(stream) -> None:
         stream: Входящие сообщения чата
     """
 
-    async for msg in stream:
+    async for key,msg in stream.items():
         # Фильтр 1: БЛОКИРОВКИ
-        blocked_senders = user_blocked[msg.user_received_id]
+        blocked_senders = user_blocked[key]
         if msg.user_id in blocked_senders:
             app.log.info(f"BLOCKED: '{msg.user_id}")
             continue
 
-        original_text = msg.massage
+        original_text = msg.message
         cleaned_text = original_text
             
         # Фильтр 2: ПЛОХИЕ СЛОВА
         bad_words_set = bad_words['global']
         for bad_word in bad_words_set:
-            if bad_word in cleaned_text.lower():
-                cleaned_text = cleaned_text.lower().replace(bad_word, '*' * len(bad_word))
+            if not bad_word:
+                continue
+            
+            pattern = re.compile(rf'\b{re.escape(bad_word)}\b', re.IGNORECASE)
+
+            if pattern.search(cleaned_text):
+                cleaned_text = pattern.sub('*' * len(bad_word), cleaned_text)
         
         if cleaned_text != original_text:
             app.log.info(f"CLEANED: '{original_text}' → '{cleaned_text}'")
         
-        cleaned_msg = UserMassage(
+        key_cleaned=key
+        cleaned_msg = UserMessage(
             user_id=msg.user_id,
-            user_received_id=msg.user_received_id,
-            massage=cleaned_text
+            message=cleaned_text
         )
-        await output_topic.send(value=cleaned_msg)
+        await output_topic.send(value=cleaned_msg,key=key_cleaned)
             
+
+            
+
